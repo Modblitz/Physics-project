@@ -10,3 +10,9 @@ encoding (we will be using wav files as our input - the first 44-bytes are the h
 
 decoding
 - reverse the encoding (you can't get back the frequencies you removed, that's why its lossy)
+
+How to use:
+
+run algo.py
+put in audio file name (.wav file)
+It breaks the audio file into frames, does a fast fourier transform, removes the low power frequencies, then inverse fourier transforms it to write into a file
