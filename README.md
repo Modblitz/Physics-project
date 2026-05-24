@@ -16,3 +16,14 @@ How to use:
 run algo.py
 put in audio file name (.wav file)
 It breaks the audio file into frames, does a fast fourier transform, removes the low power frequencies, then inverse fourier transforms it to write into a file
+
+C++ analyser (in codec/):
+
+build:
+    cd codec
+    make
+
+run on a wav file:
+    ./codec ../test_audio/sample-3s.wav
+
+prints duration, peak/rms amplitude, crest factor, zero-crossing rate, lag-1 autocorrelation, spectral centroid, flatness, and concentration.
