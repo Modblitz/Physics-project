@@ -76,3 +76,53 @@ bool readWav16(const std::string& path, WavData& out, std::string& error) {
     error = "no data chunk found";
     return false;
 }
+
+namespace {
+
+void put_le16(std::ofstream& f, uint16_t v) {
+    unsigned char b[2] = { (unsigned char)(v & 0xff),
+                           (unsigned char)((v >> 8) & 0xff) };
+    f.write((const char*)b, 2);
+}
+void put_le32(std::ofstream& f, uint32_t v) {
+    unsigned char b[4] = { (unsigned char)(v & 0xff),
+                           (unsigned char)((v >> 8) & 0xff),
+                           (unsigned char)((v >> 16) & 0xff),
+                           (unsigned char)((v >> 24) & 0xff) };
+    f.write((const char*)b, 4);
+}
+
+}
+
+bool writeWav16(const std::string& path,
+                const std::vector<int16_t>& samples,
+                uint32_t sampleRate,
+                std::string& error) {
+    std::ofstream f(path, std::ios::binary);
+    if (!f) { error = "cannot open output file"; return false; }
+
+    const uint32_t dataBytes = (uint32_t)(samples.size() * 2);
+    const uint32_t byteRate = sampleRate * 1u * 2u;
+    const uint16_t blockAlign = 1u * 2u;
+
+    f.write("RIFF", 4);
+    put_le32(f, 36u + dataBytes);
+    f.write("WAVE", 4);
+
+    f.write("fmt ", 4);
+    put_le32(f, 16u);
+    put_le16(f, 1);
+    put_le16(f, 1);
+    put_le32(f, sampleRate);
+    put_le32(f, byteRate);
+    put_le16(f, blockAlign);
+    put_le16(f, 16);
+
+    f.write("data", 4);
+    put_le32(f, dataBytes);
+    if (!samples.empty()) {
+        f.write((const char*)samples.data(), (std::streamsize)dataBytes);
+    }
+    if (!f) { error = "write failed"; return false; }
+    return true;
+}
