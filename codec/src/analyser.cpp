@@ -8,7 +8,8 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
+/* Contains scruct methods
+    */
 namespace {
 
 bool isPow2(size_t n) { return n != 0 && (n & (n - 1)) == 0; }
@@ -19,14 +20,14 @@ size_t prevPow2(size_t n) {
 }
 
 }
-
+ // method for audio features
 AudioFeatures analyse(const std::vector<int16_t>& samples, uint32_t sampleRate) {
     AudioFeatures r{};
     if (samples.empty() || sampleRate == 0) return r;
-
+    //calculates the duration 
     const size_t N = samples.size();
     r.durationSeconds = (double)N / (double)sampleRate;
-
+    
     double sumSq = 0.0, peak = 0.0;
     size_t zc = 0;
     for (size_t i = 0; i < N; ++i) {
@@ -40,7 +41,7 @@ AudioFeatures analyse(const std::vector<int16_t>& samples, uint32_t sampleRate) 
     r.rmsAmplitude = std::sqrt(sumSq / (double)N);
     r.crestFactor = (r.rmsAmplitude > 1e-12) ? (peak / r.rmsAmplitude) : 0.0;
     r.zeroCrossingRate  = (N > 1) ? ((double)zc / (double)(N - 1)) : 0.0;
-
+    // regression for something
     double sxx = 0.0, sxy = 0.0;
     for (size_t i = 1; i < N; ++i) {
         double a = (double)samples[i - 1];
