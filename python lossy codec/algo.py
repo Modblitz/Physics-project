@@ -2,7 +2,7 @@
 import soundfile as sf
 import numpy as np
 import matplotlib.pyplot as plt
-import analyser
+
 # Note: in the lab we will record an analogue signal, so we need to find put how to convert raw audio to wav before this works
 
 # Reads wave file into memory
