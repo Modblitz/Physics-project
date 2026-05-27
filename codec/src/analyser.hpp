@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <vector>
 
+/* creates a struct named AudioFeatures which contains info for the audio file
+  kinda self explanatory
+    */
 struct AudioFeatures {
     double durationSeconds = 0.0;
     double peakAmplitude = 0.0;

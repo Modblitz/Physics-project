@@ -3,11 +3,27 @@ import soundfile as sf
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Note: in the lab we will record an analogue signal, so we need to find put how to convert raw audio to wav before this works
+
 # Reads wave file into memory
+debug = False
 wav_file = input("input test file here: ")
+if wav_file == '':
+    wav_file = "test_audio/Track.wav"
+elif wav_file == "d":
+    wav_file = "test_audio/Track.wav"
+    debug = True
 
-
-audio, sr = sf.read(wav_file)
+file = False
+while not file:
+    try:
+        audio, sr = sf.read(wav_file)
+        file = True
+    except sf.LibsndfileError:
+        wav_file = input("input test file here: ")
+        if wav_file == '':
+            wav_file = "test_audio/Track.wav"
+    
 
 # Restricts audio channel to use mono audio 
 if audio.ndim > 1:
@@ -36,12 +52,27 @@ spectra = np.fft.rfft(windows, axis=1)
 
 compressed = spectra.copy() 
 
-# Removes frequencies of power that are not in the 80th percentile of power (lowest 20% of frequencies)
+powers = []
+test = compressed[1]
+# Removes frequencies of power that are not in the 80th percentile of power
 for i in range(compressed.shape[0]):
     power = np.abs(compressed[i])**2
+    powers.append(power)
     threshold = np.percentile(power, 80)
     compressed[i][power < threshold] = 0
-    
+    compressed[i] = np.round(np.real(compressed[i]), decimals=3) + 1j*np.round(np.imag(compressed[i]), decimals=3)
+   #psychoacoustics time
+for j in range(0, (frame_size+1)//2):
+    if j < 20*frame_size/sr or j > 2e5*frame_size/sr:
+       compressed[:, j] = 0
+   
+#frequency = (sr * (np.arange(len(compressed[0]))))/frame_size
+if debug:
+    for j in range(0, compressed.shape[0], 25):
+       # plt.plot(frequency, np.array(powers)[j])
+        plt.show()
+
+# print(frequency, np.array(powers)[1])
 #Inverse fourier transforms
 normal = np.fft.irfft(compressed, n=frame_size, axis=1)
 
@@ -59,5 +90,7 @@ for index, frame in enumerate(normal):
 nonzero = norm > 1e-8
 output[nonzero] /= norm[nonzero]
     
+
 #Writes compressed audio to output file
 sf.write(f"Output/testing_compressed.wav", output, sr)
+print("Done!")
