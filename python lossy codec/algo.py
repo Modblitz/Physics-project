@@ -1,39 +1,38 @@
 # Importing modules
-import soundfile as sf
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+import audiothings as at
 
 # Note: in the lab we will record an analogue signal, so we need to find put how to convert raw audio to wav before this works
 
-# Reads wave file into memory
-debug = False
+# Reads wave file into memory, will change this to byte
+debug = False # Literally does nothing
+    
 wav_file = input("input test file here: ")
 if wav_file == '':
     wav_file = "test_audio/Track.wav"
-file = False
-while not file:
-    try:
-        audio, sr = sf.read(wav_file)
-        file = True
-    except sf.LibsndfileError:
-        wav_file = input("input test file here: ")
-        if wav_file == '':
-            wav_file = "test_audio/Track.wav"
-    
+
+with open(wav_file, "r+b") as file:
+    wav_bytes = file.read()
+
+wave_data = at.wave(wav_bytes)
+
+signal, sr = wave_data.read_as_signal()
+signal = np.array(signal)
 
 # Restricts audio channel to use mono audio 
-if audio.ndim > 1:
-    audio = audio[:,0]
+if wave_data.channels > 1:
+    signal = signal[:, 0]
 
 frame_size = 1024
 hop = 512
 
 # Puts audio samples into frames
 frames = []
-for i in range(0, len(audio) - frame_size, hop):
-    frames.append(audio[i:i+frame_size])
-
-frames = np.array(frames)
+for i in range(0, len(signal) - frame_size, hop):
+    frames.append(signal[i:i+frame_size])
+frames = np.array(frames)/(2**15)
 
 # Implementing hanning window https://www.youtube.com/watch?v=1Hd72RpMFlQ
 window = np.hanning(frame_size)
@@ -60,19 +59,19 @@ test = compressed[1]
 #     compressed[i][power < threshold] = 0
 
 # (eventually) psychoacoustics time
-for j in range(0, (frame_size+1)//2):
-    if j < 20*frame_size/sr or j > 2e5*frame_size/sr:
-       compressed[:, j] = 0
+# for j in range(0, (frame_size+1)//2):
+#     if j < 20*frame_size/sr or j > 2e4*frame_size/sr:
+#        compressed[:, j] = 0
 
-# Quantisation
-step = 0.02
-q_real = np.round(compressed.real / step).astype(np.int32)
-q_imag = np.round(compressed.imag / step).astype(np.int32)
+# # Quantisation
+# step = 0.02
+# q_real = np.round(compressed.real / step).astype(np.int32)
+# q_imag = np.round(compressed.imag / step).astype(np.int32)
 
-spectra_hat = q_real.astype(np.float32) * step + 1j * q_imag.astype(np.float32) * step
+# spectra_hat = q_real.astype(np.float32) * step + 1j * q_imag.astype(np.float32) * step
 
 #Inverse fourier transforms
-normal = np.fft.irfft(spectra_hat, n=frame_size, axis=1)
+normal = np.fft.irfft(compressed, n=frame_size, axis=1)
 
 output_len = hop * (len(normal) - 1) + frame_size
 output = np.zeros(output_len)
@@ -87,8 +86,16 @@ for index, frame in enumerate(normal):
 #normalisation, there needs to be protection if norm has zero entries
 nonzero = norm > 1e-8
 output[nonzero] /= norm[nonzero]
-    
 
-#Writes compressed audio to output file
-sf.write(f"Output/testing_compressed.wav", output, sr)
+output *= 32767
+output = np.clip(output, -32768, 32767).astype(np.int16)
+
+with open("test_compressed.wav", "w+b") as file_out:
+    byte_array = []
+    byte_array.append(wave_data.header)
+    for sample in output:
+        byte_array.append(sample.tobytes())
+        byte_array.append(sample.tobytes())
+    file_out.write(b''.join(byte_array))
+
 print("Done!")
