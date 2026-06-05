@@ -19,7 +19,7 @@ SEED = 1
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUDIO_DIR = REPO_ROOT / "test_audio"
-WEIGHTS_HPP = REPO_ROOT / "codec" / "src" / "weights.hpp"
+WEIGHTS_HPP = REPO_ROOT / "audiocodec" / "src" / "weights.hpp"
 
 
 def read_wav_mono_int16(path: Path) -> list[int]:

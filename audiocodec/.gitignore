@@ -1,0 +1,7 @@
+audiocodec
+*.o
+*.pres
+*.perc
+*.ncod
+*.model
+*_decoded.wav

@@ -17,27 +17,41 @@ run algo.py
 put in audio file name (.wav file)
 It breaks the audio file into frames, does a fast fourier transform, removes the low power frequencies, then inverse fourier transforms it to write into a file
 
-C++ analyser (in codec/):
+## audiocodec
 
-build:
-    cd codec
+    cd audiocodec
     make
 
-run on a wav file:
-    ./codec analyse ../test_audio/sample-3s.wav
+It contains three codecs and the analyser. I'll write a proper doc for this
 
-prints duration, peak/rms amplitude, crest factor, zero-crossing rate, lag-1 autocorrelation, spectral centroid, flatness, and concentration.
+Lossless (`.pres`) - predictive residual coding with an MLP predictor. compresses to ~40% smaller. Each sample is predicted from previous samples by one of 6 predictors chosen per 1024-sample block (5 polynomial extrapolators of order 0–4 plus an MLP correction to an order-2 extrapolator); only the residuals are stored, zigzag-mapped and Rice-coded with a per-block parameter. The decoder re-runs the same predictor on the samples it has rebuilt, so the output is bit-identical.
 
-## Lossless predictive residual codec with an MLP predictor
+Perceptual lossy (`.perc`) - "PERC": removes what the ear cannot hear.
+For every ~23 ms slice it computes the audible masking threshold per frequency
+from a psychoacoustic model, then shapes its quantization noise to sit just under
+that threshold (zeroing everything masked). At quality 0.1 (lower=larger) compression ~10× smaller on
+the samples, ~6× smaller on the Track.
 
-A lossless audio codec in c++, with a neural network (MLP) trained in python, that reduces an input .wav by ~40% and decodes it back into a bit-identical output. Each sample is predicted from previous samples using one of 6 predictors chosen differently for each 1024 sample block (5  polynomial extrapolators of order 0-4) and a predictor that uses an MLP to add a correction to an order-2 extrapolator. Only the residuals (true sample - prediction) are stored because they are very close to zero so need fewer bits to store. We zigzag map them to positive integers and then entropy code with a rice code that depends on the 1024-sample block (chosen by a brute force test on a list of rice parameter k values), so it adapts to different sections of the track. The decoder uses the same predictor as the encoder, based on the samples it has already rebuilt. For each step, the decoder takes its prediction and then adds back the residual to get the exact original sample again.
+Learned neural lossy (`.ncod`) - a trained autoencoder, each sine-windowed,
+gain-normalised frame is passed through a 512-128-32-128-512 tanh neural network;
+the 32-D latent is quantized and entropy-coded, then overlap-added when decode.
+Extreme compression (~50×) at lo-fi quality when decoded.
 
 ### Usage
 
-    cd codec && make
-    ./codec encode  ../test_audio/sample-3s.wav  song.pres
-    ./codec decode  song.pres decoded.wav
+    ./audiocodec analyse          in.wav
 
-`decoded.wav` is sample-identical to channel 0 of the input.
+    ./audiocodec lossless-encode  in.wav   out.pres
+    ./audiocodec lossless-decode  out.pres out.wav
 
-To retrain: `cd codec/train && python3 train.py && cd .. && make`.
+    ./audiocodec lossy-encode     in.wav   out.perc  0.1
+    ./audiocodec lossy-decode     out.perc out.wav
+
+    ./audiocodec neural-train     in.wav   neural.model  25
+    ./audiocodec neural-encode    in.wav   out.ncod  5  neural.model
+    ./audiocodec neural-decode    out.ncod out.wav      neural.model
+
+    ./audiocodec compare          orig.wav decoded.wav
+    ./audiocodec selftest
+
+To retrain the lossless MLP predictor: `cd audiocodec/train && python3 train.py && cd .. && make`.

@@ -1,12 +1,12 @@
 CXX      ?= g++
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
+CXXFLAGS ?= -std=c++17 -O3 -ffast-math -Wall -Wextra
 
 SRC := $(wildcard src/*.cpp)
 OBJ := $(SRC:.cpp=.o)
-BIN := codec
+BIN := audiocodec
 
 $(BIN): $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $^
+	$(CXX) $(CXXFLAGS) -o $@ $^ -lm
 
 src/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

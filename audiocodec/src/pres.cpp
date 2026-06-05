@@ -10,9 +10,9 @@
 
 namespace {
 
-constexpr uint8_t kVersion     = 2;
-constexpr size_t  kHeaderSize  = 24;
-constexpr int     kBlockSize   = 1024;
+constexpr uint8_t kVersion = 2;
+constexpr size_t kHeaderSize = 24;
+constexpr int kBlockSize = 1024;
 
 void put_le16(uint8_t* p, uint16_t v) {
     p[0] = (uint8_t)(v & 0xff);
