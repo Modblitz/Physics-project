@@ -111,12 +111,14 @@ class encoder(wave):
     def __init__(self, wav):
         super().__init__(wav)
 
-def quantizer(spectra, sr, frame_size, hop, header):
+def quantizer(spectra, sr, frame_size, hop, header, total_bits, SMR):
     num_bins = np.shape(spectra)[0]
 
-    step = 0.02
+    step = bit_allocation(SMR, total_bits)
     q_real = np.round(spectra.real / step).astype(np.int16)
-    q_imag = np.round(spectra.imag / step).astype(np.int16)    
+    q_imag = np.round(spectra.imag / step).astype(np.int16)
+    bin_real = bin(q_real[0:step[placeholder]])   
+    bin_imag = bin(q_imag[0:step[placeholder]]) 
     np.savez(
     "compressed.npz",
     sr=sr,
@@ -135,6 +137,12 @@ def absolute_threshold(f):
     Outputs the absolute threshold power in Db at frequency f
     '''
     return 3.64*(f/1000)**(-0.8) - 6.5*np.exp(-0.6(f/1000-3.3)**2)+(10**-3)*(f/1000)**4
+
+def band_threshold(boundaries, absolute_threshold):
+    power_threshold = 24*[]
+    for i in range(len(boundaries) -1):
+        power_threshold[i] = max(absolute_threshold(boundaries[i]), absolute_threshold[i+1])
+    return np.array(power_threshold)
 
 def spread(masker_band, power, barks, f):
     barks[masker_band] = power
@@ -164,7 +172,6 @@ def thresholding(spectra, frame_size, sr):
     cur_bin = 0
     i = 0
     while i in range(0, (frame_size+1)//2):
-        bark_powers = 24*[]
         if i*sr/frame_size < bark_boundaries[cur_bin]:
             bark_bands[i] = cur_bin
             i += 1
@@ -176,3 +183,17 @@ def thresholding(spectra, frame_size, sr):
         power = np.abs(spectra[frame_idx])**2
         for bin in range(spectra.shape[1]):
             bark_powers[bark_bands[bin]] += power[bin]
+            
+        bark_powers = np.array(bark_powers)
+        
+        power_threshold = band_threshold(bark_boundaries, absolute_threshold)
+        SMR = np.log(bark_powers) - power_threshold
+        
+    return SMR
+
+def bit_allocation(SMR, total_bits, min_bits=1):
+    weights = np.array([max(0, i) for i in SMR])
+    bits_per_band = np.round(total_bits *weights/np.sum(weights))
+    return bits_per_band
+
+# Need to implement masking based on bark bands, then entropy coding
