@@ -67,7 +67,7 @@ else:
     header = blob["header"]
     
     
-    compressed = step * q_real.astype(np.float32) + 1j * step * q_imag.astype(np.float32)
+    compressed =  q_real.astype(np.float32) + 1j * q_imag.astype(np.float32)
     
     #Inverse fourier transforms
     normal = np.fft.irfft(compressed, n=frame_size, axis=1)

@@ -111,24 +111,6 @@ class encoder(wave):
     def __init__(self, wav):
         super().__init__(wav)
 
-def quantizer(spectra, sr, frame_size, hop, header, total_bits, SMR):
-    num_bins = np.shape(spectra)[0]
-
-    step = bit_allocation(SMR, total_bits)
-    q_real = np.round(spectra.real / step).astype(np.int16)
-    q_imag = np.round(spectra.imag / step).astype(np.int16)
-    bin_real = bin(q_real[0:step[placeholder]])   
-    bin_imag = bin(q_imag[0:step[placeholder]]) 
-    np.savez(
-    "compressed.npz",
-    sr=sr,
-    frame_size=frame_size,
-    hop=hop,
-    step=step,
-    q_real=q_real,
-    q_imag=q_imag,
-    header = header
-)
 
 # Psychoacoustics
 
@@ -138,62 +120,70 @@ def absolute_threshold(f):
     '''
     return 3.64*(f/1000)**(-0.8) - 6.5*np.exp(-0.6(f/1000-3.3)**2)+(10**-3)*(f/1000)**4
 
-def band_threshold(boundaries, absolute_threshold):
-    power_threshold = 24*[]
-    for i in range(len(boundaries) -1):
-        power_threshold[i] = max(absolute_threshold(boundaries[i]), absolute_threshold[i+1])
-    return np.array(power_threshold)
+def bark_abs_threshold(bark):
+    centres = [60, 150, 250, 350, 450, 570, 700, 840, 1000, 1170, 1370, 1600, 1850, 2150, 2500, 2900, 3400, 4000, 4800, 5800, 7000, 8500, 10500, 13500]
+    threshold = absolute_threshold(centres[np.floor(bark)])
+    return threshold
 
-def spread(masker_band, power, barks, f):
-    barks[masker_band] = power
-    barks[masker_band - 1] = 0.5*power
-    barks[masker_band + 1] = 0.5*power
-    
+def spread(masker_dbs, masker_barks, bark):
+    #Returns a np array of the spread at a certain bark per bark band
+    return masker_dbs/np.sqrt(2*np.pi)*np.exp(-(bark - masker_barks)**2/2)
 
-def new_threshold(f, masker_band, barks):
-    
-    return max(absolute_threshold(f), spread) 
-    
-def thresholding(spectra, frame_size, sr):
-    for j in range(0, (frame_size+1)//2):
-        if j < 20*frame_size/sr or j > 2e4*frame_size/sr:
-            spectra[:, j] = 0
-        
-    bark_boundaries = [0, 100, 200, 
-                300, 400, 510, 
-                630, 770, 920, 
-                1080, 1270, 1480, 
-                1720, 2000, 2320,
-                2700, 3150, 3700,
-                4400, 5300, 6400,
-                7700, 9500, 12000, 15500, 20000]
-    bark_bands = 24*[[]]
-    bark_bands = dict()
-    cur_bin = 0
-    i = 0
-    while i in range(0, (frame_size+1)//2):
-        if i*sr/frame_size < bark_boundaries[cur_bin]:
-            bark_bands[i] = cur_bin
-            i += 1
-        else:
-            cur_bin += 1
-    
-    for frame_idx in spectra.shape[0]:
-        bark_powers = 24*[]
-        power = np.abs(spectra[frame_idx])**2
-        for bin in range(spectra.shape[1]):
-            bark_powers[bark_bands[bin]] += power[bin]
-            
-        bark_powers = np.array(bark_powers)
-        
-        power_threshold = band_threshold(bark_boundaries, absolute_threshold)
-        SMR = np.log(bark_powers) - power_threshold
-        
-    return SMR
 
+def new_threshold(bark, masker_bark, masker_db):
+    #return a np array of the absolute threshold per bark band
+    return np.max(bark_abs_threshold(bark), spread(masker_bark, masker_db, bark))
+
+def freq_to_bark(f):
+    return 13*np.atan(0.00076*f) + 3.5((f/7500)**2)
+    
+def db_to_pow(x_db):
+    return 10.0 ** (x_db / 10.0)    
+
+def pow_to_db(x_pow):
+    return 10*np.log10(np.maximum(x_pow, 1e-10))
+  
+  
 def bit_allocation(SMR, total_bits, min_bits=1):
     weights = np.array([max(0, i) for i in SMR])
     bits_per_band = np.round(total_bits *weights/np.sum(weights))
     return bits_per_band
+  
+def thresholding(spectra_frame, frame_size, sr):
+    # Returns SMR for a frame
+    for j in range(0, (frame_size+1)//2):
+        if j < 20*frame_size/sr or j > 2e4*frame_size/sr:
+            spectra_frame[j] = 0
+        
+    full_SMR = []
+    bark_powers = np.array(24*[])
+    power = np.abs(spectra_frame)**2
+    db = pow_to_db(power)
+    for i in range(len(bark_powers)):
+        bark_db += db[np.floor(freq_to_bark(i*sr/frame_size))]
+    for j in range(len(bark_powers)):
+        power_threshold = np.array([new_threshold(k, j, bark_db[j])for k in range(len(power))])
+        SMR = pow_to_db(bark_powers) - power_threshold
+        full_SMR.append(SMR)
+    return np.array(full_SMR)
+
+def quantizer(spectra, sr, frame_size, hop, header, total_bits):
+    real_spectra = spectra.copy()
+    imag_spectra = spectra.copy()
+    for i in spectra.shape[0]:
+        SMR = thresholding(spectra[i], frame_size, sr)
+        bits = bit_allocation(SMR, total_bits)
+        for j in i:
+            real_spectra[i,j] = bin(np.real(spectra[i]))[:bits[j]//2]
+            imag_spectra[i,j] = bin(np.imag(spectra[i]))[:bits[j]//2]
+    np.savez(
+    "compressed.npz",
+    sr=sr,
+    frame_size=frame_size,
+    hop=hop,
+    q_real=real_spectra,
+    q_imag=imag_spectra,
+    header = header
+)
 
 # Need to implement masking based on bark bands, then entropy coding
