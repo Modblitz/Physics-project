@@ -48,55 +48,61 @@ if codec in ('c', 'C'):
     # fourier transforms
     spectra = np.fft.rfft(windows, axis=1)
 
-    compressed = spectra.copy() 
-    at.quantizer(spectra)
+    
+    at.quantizer(spectra, sr, frame_size, hop, wave_data.header, wave_data.channels, 2**4, out_path="compressed.npz")
 
     # Applying psychoacoustics (WIP)
-    #at.thresholding()
+
         
 else:
     # Decoding step
     file = input("Input file to be decoded")
-    
+
     blob = np.load(file)
-    step = float(blob["step"])
+    header = blob["header"]
+    if isinstance(header, np.ndarray):
+        header = header.tobytes()
+    channels = int(blob["channels"])
     q_real = blob["q_real"]
     q_imag = blob["q_imag"]
-    hop = blob["hop"]
-    frame_size = blob["frame_size"]
-    header = blob["header"]
-    
-    
-    compressed =  q_real.astype(np.float32) + 1j * q_imag.astype(np.float32)
-    
-    #Inverse fourier transforms
+    hop = int(blob["hop"])
+    frame_size = int(blob["frame_size"])
+
+    compressed = q_real.astype(np.float32) + 1j * q_imag.astype(np.float32)
     normal = np.fft.irfft(compressed, n=frame_size, axis=1)
     window = np.hanning(frame_size)
-    
-    # Overlap add
+
     output_len = hop * (len(normal) - 1) + frame_size
     output = np.zeros(output_len)
     norm = np.zeros(output_len)
 
     for index, frame in enumerate(normal):
-        start = index*hop
+        start = index * hop
         output[start:start + frame_size] += frame * window
         norm[start:start + frame_size] += window**2
-        
-    #normalisation, there needs to be protection if norm has zero entries
+
     nonzero = norm > 1e-8
     output[nonzero] /= norm[nonzero]
 
     output *= 32767
     output = np.clip(output, -32768, 32767).astype(np.int16)
 
-    # Writing to wav file
+    if channels == 2:
+        stereo = np.repeat(output[:, np.newaxis], 2, axis=1)
+        audio_bytes = stereo.astype(np.int16).tobytes()
+    else:
+        audio_bytes = output.tobytes()
+
+    header = bytearray(header)
+    data_pos = header.find(b"data")
+    if data_pos != -1:
+        new_data_size = len(audio_bytes)
+        new_file_size = len(header) + new_data_size - 8
+        header[4:8] = new_file_size.to_bytes(4, "little")
+        header[data_pos + 4:data_pos + 8] = new_data_size.to_bytes(4, "little")
+
     with open("test_compressed.wav", "w+b") as file_out:
-        byte_array = []
-        byte_array.append(header)
-        for sample in output:
-            byte_array.append(sample.tobytes())
-            byte_array.append(sample.tobytes())
-        file_out.write(b''.join(byte_array))
+        file_out.write(header)
+        file_out.write(audio_bytes)
 
 print("Done!")

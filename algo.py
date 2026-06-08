@@ -1,95 +1,101 @@
 # Importing modules
-import soundfile as sf
+import os
+import sys
 import numpy as np
-import matplotlib.pyplot as plt
-# Note: in the lab we will record an analogue signal, so we need to find put how to convert raw audio to wav before this works
+import soundfile as sf
 
-# Reads wave file into memory
-debug = False
-wav_file = input("input test file here: ")
-if wav_file == '':
-    wav_file = "test_audio/Track.wav"
-elif wav_file == "d":
-    wav_file = "test_audio/Track.wav"
-    debug = True
+sys.path.append(os.path.join(os.path.dirname(__file__), "python lossy codec"))
+import audiothings as at
 
-file = False
-while not file:
-    try:
-        audio, sr = sf.read(wav_file)
-        file = True
-    except sf.LibsndfileError:
-        wav_file = input("input test file here: ")
-        if wav_file == '':
-            wav_file = "test_audio/Track.wav"
-    
+def load_compressed_text(path):
+    sections = {}
+    key = None
+    with open(path, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if line in {
+                "SR", "FRAME_SIZE", "HOP", "CHANNELS",
+                "NUM_FRAMES", "NUM_BINS", "DTYPE",
+                "HEADER", "Q_REAL", "Q_IMAG"
+            }:
+                key = line
+                sections[key] = ""
+            elif key is not None:
+                sections[key] += line
 
-# Restricts audio channel to use mono audio 
-if audio.ndim > 1:
-    audio = audio[:,0]
+    sr = int(sections["SR"])
+    frame_size = int(sections["FRAME_SIZE"])
+    hop = int(sections["HOP"])
+    channels = int(sections["CHANNELS"])
+    num_frames = int(sections["NUM_FRAMES"])
+    num_bins = int(sections["NUM_BINS"])
+    dtype = np.dtype(sections["DTYPE"])
 
-frame_size = 1024
-hop = 512
+    q_real = np.frombuffer(bytes.fromhex(sections["Q_REAL"]), dtype=dtype).reshape(num_frames, num_bins)
+    q_imag = np.frombuffer(bytes.fromhex(sections["Q_IMAG"]), dtype=dtype).reshape(num_frames, num_bins)
 
-# Puts audio samples into frames
-frames = []
-for i in range(0, len(audio) - frame_size, hop):
-    frames.append(audio[i:i+frame_size])
+    return sr, frame_size, hop, channels, q_real, q_imag
 
-frames = np.array(frames)
+def frame_audio(signal, frame_size, hop):
+    frames = []
+    for i in range(0, len(signal) - frame_size, hop):
+        frames.append(signal[i:i + frame_size])
+    return np.array(frames)
 
-# Implementing hanning window https://www.youtube.com/watch?v=1Hd72RpMFlQ
-window = np.hanning(frame_size)
+def overlap_add(frames, hop, frame_size):
+    window = np.hanning(frame_size)
+    output_len = hop * (len(frames) - 1) + frame_size
+    output = np.zeros(output_len, dtype=np.float32)
+    norm = np.zeros(output_len, dtype=np.float32)
 
-windows = []
-for i in frames:
-    windows.append(i * window)
+    for index, frame in enumerate(frames):
+        start = index * hop
+        output[start:start + frame_size] += frame * window
+        norm[start:start + frame_size] += window**2
 
-windows = np.array(windows)
-# fourier transforms
-spectra = np.fft.rfft(windows, axis=1)
+    nonzero = norm > 1e-8
+    output[nonzero] /= norm[nonzero]
+    return output
 
-compressed = spectra.copy() 
+mode = input("Enter C to compress or D to decompress: ").strip().upper()
 
-powers = []
-test = compressed[1]
-# Removes frequencies of power that are not in the 80th percentile of power
-for i in range(compressed.shape[0]):
-    power = np.abs(compressed[i])**2
-    powers.append(power)
-    threshold = np.percentile(power, 80)
-    compressed[i][power < threshold] = 0
-    compressed[i] = np.round(np.real(compressed[i]), decimals=3) + 1j*np.round(np.imag(compressed[i]), decimals=3)
-   #psychoacoustics time
-for j in range(0, (frame_size+1)//2):
-    if j < 20*frame_size/sr or j > 2e5*frame_size/sr:
-       compressed[:, j] = 0
-   
-#frequency = (sr * (np.arange(len(compressed[0]))))/frame_size
-if debug:
-    for j in range(0, compressed.shape[0], 25):
-       # plt.plot(frequency, np.array(powers)[j])
-        plt.show()
+if mode == "C":
+    wav_file = input("Input test file here: ").strip()
+    if wav_file == "":
+        wav_file = "test_audio/Track.wav"
 
-# print(frequency, np.array(powers)[1])
-#Inverse fourier transforms
-normal = np.fft.irfft(compressed, n=frame_size, axis=1)
+    audio, sr = sf.read(wav_file)
+    if audio.ndim > 1:
+        audio = audio[:, 0]
 
-output_len = hop * (len(normal) - 1) + frame_size
-output = np.zeros(output_len)
-norm = np.zeros(output_len)
+    frame_size = 1024
+    hop = 512
+    frames = frame_audio(audio, frame_size, hop)
+    windowed = frames * np.hanning(frame_size)
 
-# Overlap add
-for index, frame in enumerate(normal):
-    start = index*hop
-    output[start:start + frame_size] += frame * window
-    norm[start:start + frame_size] += window**2
-    
-#normalisation, there needs to be protection if norm has zero entries
-nonzero = norm > 1e-8
-output[nonzero] /= norm[nonzero]
-    
+    spectra = np.fft.rfft(windowed, axis=1)
 
-#Writes compressed audio to output file
-sf.write(f"Output/testing_compressed.wav", output, sr)
+    os.makedirs("Output", exist_ok=True)
+    out_path = os.path.join("Output", "compressed.txt")
+    at.quantizer(spectra, sr, frame_size, hop, b"", 1, 2**14, out_path=out_path)
+    print(f"Compressed to {out_path}")
+
+else:
+    compressed_file = input("Input compressed file to be decoded: ").strip()
+    if compressed_file == "":
+        compressed_file = "Output/compressed.txt"
+
+    sr, frame_size, hop, channels, q_real, q_imag = load_compressed_text(compressed_file)
+
+    compressed = q_real.astype(np.float32) + 1j * q_imag.astype(np.float32)
+    normal = np.fft.irfft(compressed, n=frame_size, axis=1)
+    output = overlap_add(normal, hop, frame_size)
+
+    if channels == 2:
+        output = np.column_stack([output, output])
+
+    os.makedirs("Output", exist_ok=True)
+    sf.write("Output/test_compressed.wav", output, sr)
+    print("Decoded WAV written to Output/test_compressed.wav")
+
 print("Done!")
