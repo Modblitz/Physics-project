@@ -1,4 +1,5 @@
 import numpy as np
+import Entropy_code as ec
 
 # Utils, theres probably a library fo
 def byte_search(input, bytes):
@@ -107,125 +108,61 @@ class wave:
                 byte_array.append(sample.tobytes())
             file_out.write(b''.join(byte_array))
 
-class encoder(wave):
-    def __init__(self, wav):
-        super().__init__(wav)
+# Transforms
+
+def mdct4(x):
+    N = x.shape[0]
+    if N%4 != 0:
+        raise ValueError("MDCT4 only defined for vectors of length multiple of four.")
+    M = N // 2
+    N4 = N // 4
+    
+    rot = np.roll(x, N4)
+    rot[:N4] = -rot[:N4]
+    t = np.arange(0, N4)
+    w = np.exp(-1j*2*np.pi*(t + 1./8.) / N)
+    c = np.take(rot,2*t) - np.take(rot, N-2*t-1)         - 1j * (np.take(rot, M+2*t) - np.take(rot,M-2*t-1))
+    c = (2./np.sqrt(N)) * w * np.fft.fft(0.5 * c * w, N4)
+    y = np.zeros(M)
+    y[2*t] = np.real(c[t])
+    y[M-2*t-1] = -np.imag(c[t])
+    return y
 
 
-def _build_huffman_codes(frequencies):
-    import heapq
-
-    heap = [(freq, symbol) for symbol, freq in frequencies.items()]
-    heapq.heapify(heap)
-
-    if not heap:
-        return {0: (0, 1)}
-
-    while len(heap) > 1:
-        f1, node1 = heapq.heappop(heap)
-        f2, node2 = heapq.heappop(heap)
-        heapq.heappush(heap, (f1 + f2, (node1, node2)))
-
-    root = heap[0][1]
-    codes = {}
-
-    def traverse(node, code, length):
-        if isinstance(node, int):
-            if length == 0:
-                length = 1
-            codes[node] = (code, length)
-            return
-        left, right = node
-        traverse(left, (code << 1), length + 1)
-        traverse(right, (code << 1) | 1, length + 1)
-
-    traverse(root, 0, 0)
-    return codes
-
-
-def huffman_encode(data):
-    if isinstance(data, np.ndarray):
-        data = data.tobytes()
-    data = bytes(data)
-    freq = {}
-    for b in data:
-        freq[b] = freq.get(b, 0) + 1
-
-    codes = _build_huffman_codes(freq)
-
-    buffer = 0
-    buffer_len = 0
-    encoded = bytearray()
-
-    for b in data:
-        code, length = codes[b]
-        buffer = (buffer << length) | code
-        buffer_len += length
-        while buffer_len >= 8:
-            shift = buffer_len - 8
-            encoded.append((buffer >> shift) & 0xFF)
-            if shift > 0:
-                buffer &= (1 << shift) - 1
-            else:
-                buffer = 0
-            buffer_len -= 8
-
-    if buffer_len > 0:
-        encoded.append(buffer << (8 - buffer_len))
-
-    symbols = np.fromiter(codes.keys(), dtype=np.uint8)
-    code_values = np.fromiter((codes[s][0] for s in symbols), dtype=np.uint32)
-    code_lengths = np.fromiter((codes[s][1] for s in symbols), dtype=np.uint8)
-
-    return (
-        np.frombuffer(bytes(encoded), dtype=np.uint8),
-        symbols,
-        code_values,
-        code_lengths,
-        np.uint8(buffer_len),
-    )
-
-
-def huffman_decode(encoded_data, symbols, code_values, code_lengths, valid_bits, output_size):
-    if isinstance(encoded_data, np.ndarray):
-        encoded_data = encoded_data.tobytes()
-
-    tree = {}
-    for symbol, code, length in zip(
-        np.asarray(symbols).tolist(),
-        np.asarray(code_values).tolist(),
-        np.asarray(code_lengths).tolist(),
-    ):
-        node = tree
-        for bit_index in range(length - 1, -1, -1):
-            bit = (code >> bit_index) & 1
-            node = node.setdefault(bit, {})
-        node["symbol"] = symbol
-
-    bits = np.unpackbits(np.frombuffer(encoded_data, dtype=np.uint8), bitorder="big")
-    if int(valid_bits) != 0:
-        total_bits = (len(encoded_data) - 1) * 8 + int(valid_bits)
-    else:
-        total_bits = len(encoded_data) * 8
-    bits = bits[:total_bits]
-
-    output = bytearray()
-    node = tree
-    for bit in bits:
-        node = node[bit]
-        if "symbol" in node:
-            output.append(node["symbol"])
-            node = tree
-            if len(output) == output_size:
-                break
-
-    if len(output) != output_size:
-        raise ValueError("Huffman decode produced wrong output length")
-
-    return bytes(output)
-
+def imdct4(x):
+    N = x.shape[0]
+    if N%2 != 0:
+        raise ValueError("iMDCT4 only defined for even-length vectors.")
+    M = N // 2
+    N2 = N*2
+    
+    t = np.arange(0,M)
+    w = np.exp(-1j*2*np.pi*(t + 1./8.) / N2)
+    c = np.take(x,2*t) + 1j * np.take(x,N-2*t-1)
+    c = 0.5 * w * c
+    c = np.fft.fft(c,M)
+    c = ((8 / np.sqrt(N2))*w)*c
+    
+    rot = np.zeros(N2)
+    
+    rot[2*t] = np.real(c[t])
+    rot[N+2*t] = np.imag(c[t])
+    
+    t = np.arange(1,N2,2)
+    rot[t] = -rot[N2-t-1]
+    
+    t = np.arange(0,3*M)
+    y = np.zeros(N2)
+    y[t] = rot[t+M]
+    t = np.arange(3*M,N2)
+    y[t] = -rot[t-3*M]
+    return y
 
 # Psychoacoustics
+
+def sine_window(N):
+    n = np.arange(N)
+    return np.sin(np.pi * (n + 0.5) / N)
 
 def absolute_threshold(f):
     '''
@@ -347,68 +284,90 @@ def bit_allocation(SMR, band_bin_counts, total_bits, min_bits=2):
     return np.maximum(bits_per_component, min_bits)
 
 def quantizer(spectra, sr, frame_size, hop, header, channels, total_bits, out_path="compressed.npz"):
-    spectra = np.asarray(spectra)
-    if spectra.ndim == 1:
-        spectra = spectra[np.newaxis, :]
+    spectra_in = np.asarray(spectra)
+    if spectra_in.ndim == 1:
+        spectra_in = spectra_in[np.newaxis, :]
 
-    num_frames, num_bins = spectra.shape
-    real_spectra = np.zeros((num_frames, num_bins), dtype=np.float32)
-    imag_spectra = np.zeros((num_frames, num_bins), dtype=np.float32)
+    num_frames, num_bins = spectra_in.shape
+    # Prepare storage for quantized coefficients and per-band metadata
+    quantized_spectra = np.zeros((num_frames, num_bins), dtype=np.int32)
+    bits_alloc = np.zeros((num_frames, 24), dtype=np.int16)
+    max_vals = np.zeros((num_frames, 24), dtype=np.float32)
 
     freqs = np.arange(num_bins) * sr / frame_size
     bark_bin = np.clip(np.floor(freq_to_bark(freqs)).astype(int), 0, 23)
     band_bin_counts = np.array([np.sum(bark_bin == band) for band in range(24)], dtype=int)
 
     for i in range(num_frames):
-        frame = spectra[i]
+        frame = spectra_in[i]
         SMR = thresholding(frame, frame_size, sr)
         bits_per_component = bit_allocation(SMR, band_bin_counts, total_bits, min_bits=2)
+        bits_alloc[i, :] = bits_per_component
+        for band in range(24):
+            band_bins = np.where(bark_bin == band)[0]
+            if band_bins.size == 0:
+                max_vals[i, band] = 0.0
+                continue
+            band_frame = frame[band_bins]
+            max_val = np.max(np.abs(band_frame))
+            if max_val < 1e-12:
+                max_vals[i, band] = 0.0
+                quantized_spectra[i, band_bins] = 0
+                continue
+            max_vals[i, band] = float(max_val)
+            bits = int(bits_per_component[band])
+            if bits <= 1:
+                quantized_spectra[i, band_bins] = 0
+                continue
+            level = 2 ** (bits - 1) - 1
+            q = np.round((band_frame / max_val) * level)
+            q = np.clip(q, -level, level)
+            quantized_spectra[i, band_bins] = q.astype(np.int32)
 
+    # Save numeric quantized arrays and metadata (used for correct dequantization)
+    freqs_dict = ec.count_freqs(quantized_spectra)
+    np.savez(out_path,
+             header=header,
+             channels=channels,
+             hop=hop,
+             frame_size=frame_size,
+             sr=sr,
+             freqs_dict=freqs_dict,
+             spectra=quantized_spectra,
+             bits=bits_alloc,
+             max_vals=max_vals,
+             bark_bin=bark_bin)
+    
+def dequantizer(blob_or_spectra, freqs_dict=None):
+    """
+    Reconstruct numeric spectra from quantized arrays and saved metadata.
+    Accepts the `np.load(...)` result (an NpzFile) or a dict-like blob.
+    """
+    if hasattr(blob_or_spectra, 'files') or isinstance(blob_or_spectra, dict):
+        blob = blob_or_spectra
+        quantized = blob['spectra']
+        bits = blob['bits']
+        max_vals = blob['max_vals']
+        bark_bin = blob['bark_bin']
+    else:
+        raise ValueError("dequantizer currently expects the full saved blob from quantizer (np.load result)")
+
+    quantized = np.asarray(quantized)
+    num_frames, num_bins = quantized.shape
+    dequant = np.zeros((num_frames, num_bins), dtype=np.float32)
+
+    for i in range(num_frames):
         for band in range(24):
             band_bins = np.where(bark_bin == band)[0]
             if band_bins.size == 0:
                 continue
+            bits_val = int(bits[i, band])
+            max_val = float(max_vals[i, band])
+            if max_val <= 0 or bits_val <= 1:
+                dequant[i, band_bins] = 0.0
+                continue
+            level = 2 ** (bits_val - 1) - 1
+            q = quantized[i, band_bins].astype(np.float32)
+            dequant[i, band_bins] = (q / level) * max_val
 
-            band_bits = bits_per_component[band]
-            band_values = frame[band_bins]
-            real_band = np.real(band_values)
-            imag_band = np.imag(band_values)
-
-            max_val = max(np.max(np.abs(real_band)), np.max(np.abs(imag_band)), 1e-12)
-            quant_max = 2 ** (band_bits - 1) - 1
-            step = max_val / quant_max
-
-            q_real = np.round(real_band / step)
-            q_imag = np.round(imag_band / step)
-
-            q_real = np.clip(q_real, -quant_max, quant_max)
-            q_imag = np.clip(q_imag, -quant_max, quant_max)
-
-            real_spectra[i, band_bins] = q_real * step
-            imag_spectra[i, band_bins] = q_imag * step
-
-    header_bytes = np.frombuffer(header, dtype=np.uint8)
-
-    q_real_data, q_real_symbols, q_real_codes, q_real_code_lengths, q_real_valid_bits = huffman_encode(real_spectra.tobytes())
-    q_imag_data, q_imag_symbols, q_imag_codes, q_imag_code_lengths, q_imag_valid_bits = huffman_encode(imag_spectra.tobytes())
-
-    np.savez(
-        out_path,
-        sr=np.int32(sr),
-        frame_size=np.int32(frame_size),
-        hop=np.int32(hop),
-        channels=np.int32(channels),
-        header=header_bytes,
-        q_shape=np.array(real_spectra.shape, dtype=np.int32),
-        q_real_data=q_real_data,
-        q_real_symbols=q_real_symbols,
-        q_real_codes=q_real_codes,
-        q_real_code_lengths=q_real_code_lengths,
-        q_real_valid_bits=np.uint8(q_real_valid_bits),
-        q_imag_data=q_imag_data,
-        q_imag_symbols=q_imag_symbols,
-        q_imag_codes=q_imag_codes,
-        q_imag_code_lengths=q_imag_code_lengths,
-        q_imag_valid_bits=np.uint8(q_imag_valid_bits),
-    )
-    return out_path
+    return dequant

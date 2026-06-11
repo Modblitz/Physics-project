@@ -1,11 +1,7 @@
 # Note: in the lab we will record an analogue signal, so we need to find put how to convert raw audio to wav before this works
 # Importing modules
 import numpy as np
-import matplotlib.pyplot as plt
-
 import audiothings as at
-
-
 
 debug = False # Literally does nothing
     
@@ -13,6 +9,7 @@ codec = input("C for Compress or D for decompress")
 if codec in ('c', 'C'):
 
     wav_file = input("input test file here: ")
+    destination = input("input destination file here: ")
     if wav_file == '':
         wav_file = "test_audio/Track.wav"
 
@@ -37,56 +34,73 @@ if codec in ('c', 'C'):
         frames.append(signal[i:i+frame_size])
     frames = np.array(frames)/(2**15)
 
-    # Implementing hanning window https://www.youtube.com/watch?v=1Hd72RpMFlQ
-    window = np.hanning(frame_size)
-
+    # Implementing sine window https://www.youtube.com/watch?v=1Hd72RpMFlQ
+    window = at.sine_window(frame_size)
     windows = []
     for i in frames:
         windows.append(i * window)
 
     windows = np.array(windows)
     # fourier transforms
-    spectra = np.fft.rfft(windows, axis=1)
-
+    spectras = []
+    i = 1
+    for frame in windows:
+        spectra = at.mdct4(frame)
+        print(f"MDCT {i}/{len(windows)}")
+        spectras.append(spectra)
+        i += 1
+    spectras = np.array(spectras)
     
-    at.quantizer(spectra, sr, frame_size, hop, wave_data.header, wave_data.channels, 2**4, out_path="compressed.npz")
+    
+    at.quantizer(spectras, sr, frame_size, hop, header=wave_data.header, channels=wave_data.channels, total_bits=2**8, out_path=destination)
 
     # Applying psychoacoustics (WIP)
-
+# %%
         
 else:
     # Decoding step
     file = input("Input file to be decoded")
-
-    blob = np.load(file)
+    
+    blob = np.load(file, allow_pickle=True)
     header = blob["header"]
+    spectra = blob["spectra"]
     if isinstance(header, np.ndarray):
         header = header.tobytes()
     channels = int(blob["channels"])
-    q_real = blob["q_real"]
-    q_imag = blob["q_imag"]
     hop = int(blob["hop"])
     frame_size = int(blob["frame_size"])
+    decoded_spectra = at.dequantizer(blob)
 
-    compressed = q_real.astype(np.float32) + 1j * q_imag.astype(np.float32)
-    normal = np.fft.irfft(compressed, n=frame_size, axis=1)
-    window = np.hanning(frame_size)
+    # Reconstruct time-domain frames via IMDCT
+    reconstructed = []
+    for idx, frame in enumerate(decoded_spectra):
+        audio = at.imdct4(frame)
+        print(f"IMDCT {idx+1}/{len(decoded_spectra)}")
+        reconstructed.append(audio)
 
-    output_len = hop * (len(normal) - 1) + frame_size
-    output = np.zeros(output_len)
-    norm = np.zeros(output_len)
+    window = at.sine_window(frame_size)
 
-    for index, frame in enumerate(normal):
-        start = index * hop
-        output[start:start + frame_size] += frame * window
-        norm[start:start + frame_size] += window**2
+    num_frames = len(reconstructed)
+    output_len = hop * (num_frames - 1) + frame_size
+    output = np.zeros(output_len, dtype=np.float32)
+    norm = np.zeros(output_len, dtype=np.float32)
 
+    # Overlap-add all frames
+    for idx, frame_td in enumerate(reconstructed):
+        start = idx * hop
+        end = start + frame_size
+        output[start:end] += frame_td * window
+        norm[start:end] += window**2
+
+    # Normalize where window energy is non-zero
     nonzero = norm > 1e-8
     output[nonzero] /= norm[nonzero]
 
+    # Scale to int16 and clip
     output *= 32767
     output = np.clip(output, -32768, 32767).astype(np.int16)
 
+    # Prepare bytes for writing
     if channels == 2:
         stereo = np.repeat(output[:, np.newaxis], 2, axis=1)
         audio_bytes = stereo.astype(np.int16).tobytes()
