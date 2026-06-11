@@ -13,6 +13,7 @@ decoding
 
 How to use:
 
+python lossy codec
 run algo.py and do what it says
 
 ## audiocodec
