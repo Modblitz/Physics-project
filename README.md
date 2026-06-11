@@ -13,9 +13,9 @@ decoding
 
 How to use:
 
-run algo.py
-put in audio file name (.wav file)
-It breaks the audio file into frames, does a fast fourier transform, removes the low power frequencies, then inverse fourier transforms it to write into a file
+python lossy codec
+
+run algo.py and do what it says
 
 ## audiocodec
 
