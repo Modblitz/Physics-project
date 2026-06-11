@@ -1,4 +1,5 @@
 # Note: in the lab we will record an analogue signal, so we need to find put how to convert raw audio to wav before this works
+# Note: a lot of this code was debugged with the help of genAI, but the overall structure and implementation is my own. I just had to ask for help with some of the more technical details of the implementation, but I understand how all of it works and I wrote all of it.
 # Importing modules
 import numpy as np
 import audiothings as at
@@ -8,7 +9,7 @@ debug = False # Literally does nothing
 codec = input("C for Compress or D for decompress")
 if codec in ('c', 'C'):
 
-    wav_file = input("input test file here: ")
+    wav_file = input("input wav file here: ")
     destination = input("input destination file here: ")
     if wav_file == '':
         wav_file = "test_audio/Track.wav"
@@ -34,14 +35,14 @@ if codec in ('c', 'C'):
         frames.append(signal[i:i+frame_size])
     frames = np.array(frames)/(2**15)
 
-    # Implementing sine window https://www.youtube.com/watch?v=1Hd72RpMFlQ
+    # Implementing sine window https://www.youtube.com/watch?v=1Hd72RpMFlQ this link is not about the sine window but it is about the hanning window which is similar and the same process applies to the sine window
     window = at.sine_window(frame_size)
     windows = []
     for i in frames:
         windows.append(i * window)
 
     windows = np.array(windows)
-    # fourier transforms
+    # transforms
     spectras = []
     i = 1
     for frame in windows:
@@ -51,10 +52,9 @@ if codec in ('c', 'C'):
         i += 1
     spectras = np.array(spectras)
     
-    
+    # applying psychoacoustic model and quantization    
     at.quantizer(spectras, sr, frame_size, hop, header=wave_data.header, channels=wave_data.channels, total_bits=2**8, out_path=destination)
 
-    # Applying psychoacoustics (WIP)
 # %%
         
 else:
@@ -120,3 +120,4 @@ else:
         file_out.write(audio_bytes)
 
 print("Done!")
+

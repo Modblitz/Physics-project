@@ -1,5 +1,6 @@
 import heapq
 
+# Huffman coding implementation based on https://www.geeksforgeeks.org/huffman-coding-greedy-algo-3/
 class Node:
     def __init__(self, freq, index, symbol=None, left=None, right=None):
         self.freq = freq

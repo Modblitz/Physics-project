@@ -1,7 +1,6 @@
 import numpy as np
 import Entropy_code as ec
 
-# Utils, theres probably a library fo
 def byte_search(input, bytes):
     #searches for byte sequences
     for i, byte in enumerate(input):
@@ -64,6 +63,7 @@ class wave:
             print("TOO MUCH WORK I CBA!!!!")
             return
     def read_as_bytes(self):
+        # broken and not used, ignore
         '''
         Usage:
 
@@ -158,11 +158,17 @@ def imdct4(x):
     y[t] = -rot[t-3*M]
     return y
 
-# Psychoacoustics
-
+# windows
 def sine_window(N):
     n = np.arange(N)
     return np.sin(np.pi * (n + 0.5) / N)
+
+def hanning_window(N):
+    n = np.arange(N)
+    return 0.5 * (1 - np.cos(2 * np.pi * n / (N - 1)))
+
+# Psychoacoustics
+
 
 def absolute_threshold(f):
     '''
@@ -249,6 +255,8 @@ def thresholding(spectra_frame, frame_size, sr):
         full_SMR[band] = bark_db[band] - np.max(threshold_db[band_bins])
 
     return full_SMR
+
+# Bit allocation and quantization
 
 def bit_allocation(SMR, band_bin_counts, total_bits, min_bits=2):
     band_bin_counts = np.asarray(band_bin_counts, dtype=int)
@@ -371,3 +379,4 @@ def dequantizer(blob_or_spectra, freqs_dict=None):
             dequant[i, band_bins] = (q / level) * max_val
 
     return dequant
+

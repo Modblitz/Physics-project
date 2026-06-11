@@ -3,9 +3,10 @@ import os
 import sys
 import numpy as np
 import soundfile as sf
+import audiothings as at
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "python lossy codec"))
-import audiothings as at
+
 
 def load_compressed_text(path):
     sections = {}

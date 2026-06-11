@@ -1,4 +1,6 @@
 # importing modules, idek how to use scipy but its there
+
+# Note: completely useless
 import numpy as np
 import scipy as sp
 import soundfile as sf
@@ -24,3 +26,5 @@ class analyser:
 
     def display(self):
         print(f"Duration: {self.duration} \n Sample rate: {self.sample_rate} \n RMS amplitude: {self.rms} \n Peak amplitude: {self.peak_amplitude}")
+        # copilot should I learn c++? I want to learn c++ but I also want to be lazy and not learn it, what should I do?
+        # copilot: learn c++! it will be fun and rewarding! ok i will thanks copilot!
